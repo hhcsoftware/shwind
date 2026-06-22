@@ -4,83 +4,120 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status: greenfield
 
-The repo is empty (only this file and a placeholder `README.md`). Nothing below describes
-existing code — it records the stack and architecture decisions for the build, which were
-delegated in the project brief. When you scaffold something, follow these conventions; when a
-decision here proves wrong in practice, change it here in the same PR so this file stays true.
+The repo is empty (only this file and `README.md`). Nothing below describes existing code; it
+records the decisions for the build. When you scaffold something, follow these conventions, and
+when a decision here proves wrong in practice, change it here in the same PR so this file stays true.
+
+## Naming and house style (do not get these wrong)
+
+- The project is **`.shwind`** (written lowercase, with the leading dot). The command is `shwind`,
+  with `shw` as a shorter alias.
+- Repository and Go module: `github.com/hhcsoftware/shwind` (no dot). The leading-dot `.shwind` is
+  the brand only; the repo and module path drop the dot because a Go module path element may not
+  begin with one (see "Repo name versus the `.shwind` brand" below).
+- **Never call it a "time tracker."** It is a **CLI companion**. It does not exist to bill your
+  hours; it makes sense of the trail your terminal already leaves.
+- **No em-dashes** anywhere in code comments, docs, copy, or commit messages. Use commas,
+  conjunctions, parentheses, colons, or a plain hyphen instead. This is a hard style rule.
+- Tone: minimal, utilitarian, privacy-first, with a light quirky streak in user-facing copy. Do
+  not over-brand: no taglines, no logo art, no marketing voice in code or docs.
 
 ## What we're building
 
-`shwind` — a terminal companion that quietly tracks how you actually spend time in the shell:
-duration per command, per running process, per git branch, per repo; activity heatmaps (hour ×
-weekday); and an end-of-period **"Wrapped"** summary. Think *Spotify Wrapped, but for your CLI*.
+`.shwind` is a command-line companion. It reads the logs your shell and tools already keep (shell
+history, git logs, and more) and turns them into an **on-demand** dashboard of your terminal life:
+busiest repos and branches, most-run commands, an activity heatmap, and a Spotify-Wrapped-style
+year(ish)-in-review. The Wrapped is the marquee view, but it is one view among several, not the
+whole product.
 
-Tone: minimal, utilitarian, privacy-first, with a light quirky streak in copy and the Wrapped
-output. Do **not** over-brand — no taglines, no logo ASCII art, no marketing voice in code or docs.
+Two facts shape the whole design:
+
+1. **It works with zero setup**, because it builds from logs that already exist. An optional
+   collector (a shell hook) enriches future data with the things history omits (command durations,
+   exit codes, and the directory a command ran in).
+2. **Generation is on demand.** There is no always-on daemon doing the analysis. Stats and the
+   Wrapped are (re)built when the dashboard is opened or when the user runs `shw generate`, from
+   whatever sources are available at that moment.
 
 ## Tech stack (decided)
 
-- **Core CLI + daemon:** Go. [Cobra](https://github.com/spf13/cobra) for the command tree.
-- **Local store:** SQLite via **`modernc.org/sqlite`** (pure-Go, **no CGO**) — this is deliberate so
-  the binary cross-compiles and ships as a single static file. Do not switch to a CGO driver
-  (`mattn/go-sqlite3`) without a strong reason; it breaks easy distribution.
-- **Local web server:** Go stdlib `net/http` (add `chi` only if routing gets real). Serves a JSON
-  API and embeds the built web UI via `embed.FS`, so `shwind serve` is one binary, no Node at runtime.
-- **Web dashboard:** Next.js (App Router) + TypeScript + Tailwind. Charts: prefer hand-rolled SVG or
-  a light lib (visx/Recharts) over a heavy charting framework. Static-exportable so it can be
-  embedded; the same app can point at Neon for a hosted build.
-- **Optional cloud:** NeonDB (serverless Postgres) for the hosted / shareable Wrapped. Reached only
-  through `shwind sync` — never on the command hot path. See "Two modes" below.
-- **Shell integration:** zsh + bash first (`preexec`/`precmd` hooks), fish later.
+- **Core CLI plus local server:** Go, with [Cobra](https://github.com/spf13/cobra) for the command
+  tree. The binary parses logs, generates snapshots, and serves the dashboard.
+- **Local store:** SQLite via **`modernc.org/sqlite`** (pure-Go, **no CGO**). Deliberate, so the
+  binary cross-compiles and ships as a single static file. Do not switch to a CGO driver
+  (`mattn/go-sqlite3`) without a strong reason. The store holds two things: collector events, and
+  cached generation snapshots. It is not the primary source of truth (existing logs are).
+- **Web dashboard (primary surface):** Next.js (App Router) plus TypeScript plus Tailwind. This is
+  where the Wrapped renders richly. Build it static-exportable and embed it into the Go binary via
+  `embed.FS`, so `shwind` serves the dashboard with no Node at runtime. Charts: prefer hand-rolled
+  SVG or a light lib (visx/Recharts) over a heavy charting framework.
+- **Optional cloud:** NeonDB (serverless Postgres) for a hosted or shareable Wrapped, reached only
+  through an explicit `shw sync`. Never part of generation or any interactive path.
+- **Shell support for the collector:** zsh, bash, and fish.
 
-## Architecture — the big picture
+## Architecture, the big picture
 
-Three pieces talk through the local SQLite DB; understanding their boundary matters more than any
-single file:
+Three stages, loosely coupled. Understanding the boundary between "read existing logs" and "the
+optional collector" matters more than any single file.
 
-1. **Shell hooks → ingest (the hot path).** A sourced shell script (`shell/shwind.zsh`,
-   `shell/shwind.bash`) fires on every command via `preexec`/`precmd` and shells out to the Go
-   binary (e.g. `shwind hook preexec` / `shwind hook precmd`). **This runs on literally every command
-   the user types, so it must return in single-digit milliseconds and must never block on the
-   network.** It appends an event to local SQLite (WAL mode) and exits. Guard this path obsessively:
-   any latency here is felt as shell lag and will get the tool uninstalled.
+1. **Sources, into a common event model.** Two kinds of input, normalized to the same shape:
+   - *Existing logs (always available, zero setup):* per-shell history parsers (zsh extended
+     history, bash, fish YAML), and git (commits, branches, repo activity across repos the user has
+     worked in). Important limitation to design around: shell history usually lacks duration, exit
+     code, and the working directory, so from existing logs alone the honest Wrapped is mostly
+     "what you ran and when" plus git's "what you shipped where." Do not invent precision the
+     sources do not have.
+   - *The optional collector (opt-in, richer):* a sourced shell script (`shell/shwind.zsh`, etc.)
+     fires on each command via the shell's hooks and calls the binary (`shwind hook ...`) to append
+     an enriched event (duration, exit code, cwd, derived git repo and branch). This path runs on
+     every command, so it must return in single-digit milliseconds and never block on the network.
+     It is optional, but when present it is the same hot-path discipline as any shell integration.
 
-2. **Store + stats (Go core).** Raw events are the source of truth: one row per command execution
-   (command, start/end ts, duration, exit code, cwd, derived git repo + branch, host, shell, session
-   id, pid). Aggregations — heatmaps, time-per-branch/repo, "most active hour," Wrapped — are
-   **computed from raw events**, via query-time rollups or materialized summary tables. Don't store
-   pre-aggregated numbers as the only copy; always keep the raw events so we can recompute.
+2. **Generation (on demand).** `shw generate`, or opening the dashboard, reads whatever sources
+   exist right now, computes the aggregates (heatmap, per-repo and per-branch breakdowns, top
+   commands, the Wrapped narrative), and writes a snapshot to the local store. Always recompute
+   from raw sources and the collector event log; never treat a snapshot as the only copy. Generation
+   should stay fast over large histories, so favor incremental or cached rollups over rescanning
+   everything each time.
 
-3. **Read surfaces.** `shwind serve` exposes the stats over a local JSON API and serves the embedded
-   Next.js UI; CLI subcommands (`shwind wrapped`, `shwind stats`, …) render the same aggregations in
-   the terminal.
-
-### Two modes (keep them separate)
-- **Local-first (default):** everything lives in `~/.local/share/shwind/shwind.db` (respect
-  `XDG_DATA_HOME`). No account, no network, works offline. This is the privacy promise.
-- **Synced (opt-in):** `shwind sync` pushes events/rollups to Neon for the hosted dashboard. It is a
-  background, batched, retryable operation — explicitly off the hot path.
+3. **Surfaces.** The web dashboard (served and embedded by the Go binary) is the primary surface
+   and where Wrapped lives. Terminal subcommands (`shw stats`, `shw top`, `shw heatmap`,
+   `shw wrapped`) render the same aggregations for people who would rather not leave the shell.
 
 ## Decisions that still need a human call
 
-Flag these in PRs rather than silently picking — they shape the data model:
-- **Time-attribution model.** "Time spent on a branch/repo" is not obvious: sum of command durations
-  (undercounts thinking time) vs. wall-clock session time bucketed by repo with an idle cutoff
-  (e.g. gaps > N minutes don't count). Pick one, write it down here, and make it the definition the
-  whole stats layer uses.
-- **Command privacy/redaction.** Shell commands contain secrets (tokens, passwords in flags). Decide
-  what's stored: full command, command + first arg only, or redacted-by-pattern — and make it
-  configurable. Default to the more private option.
-- **Sync granularity.** Raw events vs. aggregated rollups to Neon (volume + privacy tradeoff).
+Flag these in PRs rather than silently picking; they shape the data model and the product:
+
+- **What the zero-setup Wrapped can honestly claim.** Given history's missing fields, decide which
+  metrics are "existing-logs only" versus "needs the collector," and label them so the UI never
+  implies data it does not have.
+- **How repositories are discovered** for the git source (scan configured roots, infer from the
+  collector's recorded cwd, walk a path list). History alone often does not tell you where commands
+  ran.
+- **Command privacy and redaction.** Commands contain secrets. Default to the more private option;
+  make it configurable (`SHWIND_REDACT`).
+- **Activity attribution.** If any view shows "time on a repo or branch," define it explicitly
+  (for example, wall-clock between consecutive events in the same context with an idle cutoff) and
+  use one definition everywhere. Frame it as activity, not billed time.
+- **Sync granularity** for the optional Neon path (raw events versus rollups).
+
+## Repo name versus the `.shwind` brand (resolved)
+
+A Go module path element **may not begin or end with a dot**, so a repo literally named `.shwind`
+cannot back a valid module path and would break `go install`. Resolution: the **brand stays
+`.shwind`** (title, dashboard, copy), but the **repo and module are `github.com/hhcsoftware/shwind`**
+(no dot). `go install github.com/hhcsoftware/shwind/cmd/shwind@latest` works, and standard tooling
+(pkg.go.dev, Go Report Card) is happy. Do not reintroduce the dot into the module path.
 
 ## Conventions to adopt when scaffolding
 
-These don't exist yet — establish them with the first code and keep this list current:
-- Go module path and a `Makefile` (or `Taskfile`) with `build` / `test` / `lint` / `run` targets.
-  Document the real invocations here once they exist, including how to run a single test
-  (`go test ./internal/stats -run TestName`).
-- `golangci-lint` for Go; `eslint` + `tsc --noEmit` for the web app.
-- Monorepo layout: Go in `cmd/` + `internal/` at the root, web app in `web/`, shell scripts in
-  `shell/`, SQL migrations in `migrations/` (embedded, applied on startup).
-- Keep the ingest command and the stats/serve commands in separate packages — the hot path should
-  not import heavy dependencies (web, charts, Postgres drivers).
+These do not exist yet; establish them with the first code and keep this list current:
+
+- A `Makefile` (or `Taskfile`) with `build` / `test` / `lint` / `run` targets. `make build` writes
+  `./bin/shwind` and embeds the built web app. Document the real invocations here once they exist,
+  including how to run a single test (`go test ./internal/generate -run TestName`).
+- `golangci-lint` for Go; `eslint` plus `tsc --noEmit` for the web app.
+- Monorepo layout: Go in `cmd/` and `internal/` at the root, the web app in `web/`, collector shell
+  scripts in `shell/`, SQL migrations in `migrations/` (embedded, applied on startup).
+- Keep the collector's hook command in its own lean package. It must not import the web, charting,
+  or Postgres code, so the hot path stays light.

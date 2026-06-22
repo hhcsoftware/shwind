@@ -9,22 +9,22 @@
 
 <div align="center">
 
-# shwind
+# .shwind
 
 [![Release][release-badge]][releases]
-[![Go Report Card][goreport-badge]][goreport]
 [![License][license-badge]][license]
 
-shwind is a **time tracker for your terminal**.
+`.shwind` is a **companion for your command line**.
 
-It quietly clocks every command, process, branch, and repo — so once a year it can
-hand you a *Spotify Wrapped, but for your CLI.*<br />
-Local-first, no account required. shwind works on all major shells.
+It reads the logs your shell and tools already leave behind, your shell history, your
+git logs, and more, then turns them into an on-demand dashboard of your terminal life,
+topped with a year(ish)-in-review reel. Spotify Wrapped, but for your CLI.<br />
+Nothing to set up before your first look. Works on all major shells.
 
 [Getting started](#getting-started) •
 [Installation](#installation) •
 [Configuration](#configuration) •
-[Web dashboard](#web-dashboard)
+[What it reads](#what-it-reads)
 
 </div>
 
@@ -33,31 +33,31 @@ Local-first, no account required. shwind works on all major shells.
 <!-- ![Demo][demo] -->
 
 ```sh
-shwind                # today at a glance: time tracked, top commands, current streak
-shwind wrapped        # your CLI Wrapped — the headline reel (try `shwind wrapped --year`)
+shwind                # open the dashboard in your browser (built from whatever logs it finds)
+shw                   # same thing, fewer keystrokes
 
-shwind stats          # where your time actually went
-shwind stats --repo   # ranked by time spent per repo
-shwind stats --branch # ranked by time spent per branch
-shwind top            # your most-run commands, ranked
-shwind heatmap        # when you're at the keyboard (hour × weekday)
+shw generate          # (re)build your stats and Wrapped from the logs available right now
+shw wrapped           # your CLI Wrapped, the year(ish)-in-review reel
+shw stats             # on-demand breakdowns: busiest repos, branches, and commands
+shw top               # your most-run commands, ranked
+shw heatmap           # when you're at the keyboard, by hour and weekday
+shw sources           # show which logs shwind found and is reading
 
-shwind serve          # open the web dashboard → http://localhost:7373
-shwind pause          # stop tracking for a bit; `shwind resume` picks it back up
+shw init zsh          # optional: turn on the collector for richer data going forward
 ```
 
-shwind records one row per command — duration, exit code, the directory, and the git repo +
-branch it ran in — then does the arithmetic so you don't have to. Read more about how time is
-attributed [here](#how-time-is-counted).
+`.shwind` works the moment it's installed because it reads logs you already have. Want sharper
+numbers (command durations, exit codes, which repo a command ran in)? Turn on the optional
+collector and it enriches everything from that point on.
 
 ## Installation
 
-shwind installs in 3 easy steps:
+`.shwind` installs in 2 easy steps (3 if you want the good stuff):
 
 1. **Install the binary**
 
-   shwind runs on most major platforms. If yours isn't listed, please
-   [open an issue][issues].
+   The command is `shwind`, or `shw` if you prefer fewer keystrokes. It runs on most major
+   platforms; if yours isn't listed, please [open an issue][issues].
 
    <details>
    <summary>Linux / macOS / WSL</summary>
@@ -65,52 +65,66 @@ shwind installs in 3 easy steps:
    > The quickest way is the install script:
    >
    > ```sh
-   > curl -sSfL https://raw.githubusercontent.com/axo/shwind/main/install.sh | sh
+   > curl -sSfL https://raw.githubusercontent.com/hhcsoftware/shwind/main/install.sh | sh
    > ```
    >
    > Or, if you have a Go toolchain (1.22+):
    >
    > ```sh
-   > go install github.com/axo/shwind/cmd/shwind@latest
+   > go install github.com/hhcsoftware/shwind/cmd/shwind@latest
    > ```
+   >
+   > Or grab a prebuilt binary from the [releases page][releases] and drop it on your `PATH`.
 
    </details>
 
    <details>
    <summary>Windows</summary>
 
-   > shwind works with PowerShell, as well as shells running in Git Bash and MSYS2.
+   > `.shwind` works with PowerShell, as well as shells running in Git Bash and MSYS2.
    >
    > With a Go toolchain (1.22+):
    >
    > ```sh
-   > go install github.com/axo/shwind/cmd/shwind@latest
+   > go install github.com/hhcsoftware/shwind/cmd/shwind@latest
    > ```
    >
-   > Make sure `%GOPATH%\bin` (usually `%USERPROFILE%\go\bin`) is on your `PATH`.
+   > Or download a prebuilt binary from the [releases page][releases] and put it on your `PATH`.
 
    </details>
 
    <details>
    <summary>From source</summary>
 
+   > Needs a Go toolchain (1.22+). The web dashboard is embedded into the binary at build time,
+   > so no Node is required to run it.
+   >
    > ```sh
-   > git clone https://github.com/axo/shwind
+   > git clone https://github.com/hhcsoftware/shwind
    > cd shwind
    > make build        # writes ./bin/shwind
    > ```
-   >
-   > The web dashboard is embedded into the binary at build time — no Node required to run it.
 
    </details>
 
    > **Note:**
    > More package managers (Homebrew, Nix, the usual suspects) are on the list. PRs welcome.
 
-2. **Hook it into your shell**
+2. **Run it**
 
-   This is the part that does the tracking. Add the line for your shell, open a new terminal,
-   and shwind starts quietly taking notes.
+   ```sh
+   shwind
+   ```
+
+   This opens the dashboard at `http://localhost:7373`, builds your Wrapped from whatever logs
+   are available, and gets out of your way. No account, nothing to configure. The terminal
+   subcommands above show the same numbers if you'd rather not leave the shell.
+
+3. **Turn on the collector** <sup>(optional)</sup>
+
+   Existing logs are enough to get started, but they're patchy: shell history rarely records how
+   long a command took, what it exited with, or which directory it ran in. The collector fills
+   those gaps for everything you do from here on.
 
    <details>
    <summary>Bash</summary>
@@ -159,17 +173,8 @@ shwind installs in 3 easy steps:
    </details>
 
    > **Note:**
-   > The hook is intentionally boring — it appends a row to a local database and gets out of the
-   > way in a millisecond or two. It never phones home and never blocks your prompt.
-
-3. **Look at your data** <sup>(optional)</sup>
-
-   ```sh
-   shwind serve
-   ```
-
-   Opens the dashboard at `http://localhost:7373` — heatmaps, per-repo breakdowns, and the
-   Wrapped view. The terminal subcommands above show the same numbers if you'd rather not leave.
+   > The collector is deliberately boring. It appends a row to a local database and gets out of
+   > the way in a millisecond or two. It never phones home and never blocks your prompt.
 
 ## Configuration
 
@@ -178,18 +183,18 @@ shwind installs in 3 easy steps:
 When calling `shwind init`, the following flags are available:
 
 - `--cmd`
-  - Changes the name of the `shwind` command.
-  - `--cmd sh` would let you run `sh wrapped`, `sh stats`, etc.
+  - Changes the name of the command the collector wires up.
+  - `--cmd shw` would let you run `shw wrapped`, `shw stats`, and friends.
 - `--hook <HOOK>`
-  - Changes when shwind records a command:
+  - Changes when the collector records a command:
 
-    | Hook              | Description                                              |
-    | ----------------- | ------------------------------------------------------- |
-    | `none`            | Never (you can still record manually)                   |
-    | `command` (default) | Around every command — captures real duration & exit code |
+    | Hook                | Description                                                |
+    | ------------------- | --------------------------------------------------------- |
+    | `none`              | Never (you can still record manually)                     |
+    | `command` (default) | Around every command, capturing real duration and exit code |
 
 - `--no-hook`
-  - Prints the init script without installing the shell hook, in case you want to wire it up
+  - Prints the init script without installing the collector, in case you want to wire it up
     yourself.
 
 ### Environment variables
@@ -197,66 +202,64 @@ When calling `shwind init`, the following flags are available:
 Set these **before** `shwind init` is called.
 
 - `SHWIND_DATA_DIR`
-  - Where the local database lives. shwind never writes anywhere else by default.
+  - Where the local database and generated snapshots live. `.shwind` never writes anywhere else
+    by default.
   - Defaults follow each platform's conventions:
 
-    | OS          | Path                                     | Example                                    |
-    | ----------- | ---------------------------------------- | ------------------------------------------ |
-    | Linux / BSD | `$XDG_DATA_HOME` or `$HOME/.local/share` | `/home/alice/.local/share/shwind`          |
-    | macOS       | `$HOME/Library/Application Support`       | `/Users/Alice/Library/Application Support/shwind` |
-    | Windows     | `%LOCALAPPDATA%`                          | `C:\Users\Alice\AppData\Local\shwind`      |
+    | OS          | Path                                     | Example                                            |
+    | ----------- | ---------------------------------------- | -------------------------------------------------- |
+    | Linux / BSD | `$XDG_DATA_HOME` or `$HOME/.local/share` | `/home/alice/.local/share/shwind`                  |
+    | macOS       | `$HOME/Library/Application Support`       | `/Users/Alice/Library/Application Support/shwind`  |
+    | Windows     | `%LOCALAPPDATA%`                          | `C:\Users\Alice\AppData\Local\shwind`              |
 
 - `SHWIND_REDACT`
-  - Controls how much of each command is stored. Your shell history is sensitive; shwind treats
-    it that way.
+  - Controls how much of each command is stored. Your shell history is sensitive, and `.shwind`
+    treats it that way.
 
-    | Value             | Stored                                            |
-    | ----------------- | ------------------------------------------------- |
-    | `args` (default)  | Command + arguments, with secret-looking tokens scrubbed |
-    | `command`         | Just the program name (`git`, `npm`, …) — no args |
-    | `none`            | Nothing but timing, exit code, repo, and branch   |
+    | Value             | Stored                                                   |
+    | ----------------- | -------------------------------------------------------- |
+    | `args` (default)  | Command and arguments, with secret-looking tokens scrubbed |
+    | `command`         | Just the program name (`git`, `npm`, and so on), no args |
+    | `none`            | Nothing but timing, exit code, repo, and branch          |
 
 - `SHWIND_IGNORE`
   - Commands or [globs][glob] to skip entirely, separated by OS path characters (`:` on
     Linux/macOS, `;` on Windows). Example: `clear:ls:* --password*`.
-- `SHWIND_IDLE_TIMEOUT`
-  - Gaps longer than this don't count as "time spent" (you went to lunch; shwind shouldn't bill
-    you for it). Defaults to `5m`. See [How time is counted](#how-time-is-counted).
+- `SHWIND_SOURCES`
+  - Extra history or log files to read, beyond the ones `.shwind` finds automatically. Same
+    separators as above.
 - `SHWIND_PORT`
-  - Port for `shwind serve`. Defaults to `7373`.
+  - Port for the dashboard. Defaults to `7373`.
 
-## Web dashboard
+## What it reads
 
-`shwind serve` starts a small local server (no Node, no cloud) that renders your stats: an
-hour-by-weekday activity heatmap, time-per-repo and time-per-branch breakdowns, your most-run
-commands, and the year-in-review **Wrapped** view. It reads the same local database the CLI does,
-so there's nothing to sync and nothing to log into.
+`.shwind` builds everything on demand from logs that already exist on your machine:
 
-## How time is counted
+- **Shell history**, for zsh, bash, and fish, including timestamps where your shell records them.
+- **Git logs**, across the repositories you've worked in, for commit cadence, branches, and
+  busiest projects.
+- **The optional collector**, once enabled, for the things history leaves out: command durations,
+  exit codes, and the directory each command ran in.
 
-shwind stores raw command events and computes everything from them. "Time spent on a repo or
-branch" is wall-clock time between consecutive commands in the same context, with idle gaps longer
-than `SHWIND_IDLE_TIMEOUT` thrown out — so a long-running build counts, but stepping away for
-coffee doesn't. Every number you see is recomputed from the raw events, which means you can change
-the rules and re-run history without losing anything.
+Run `shw sources` to see exactly what was found. Every number is recomputed from these sources, so
+you can change the rules, or turn the collector on later, and rebuild your history without losing
+anything. Nothing leaves your machine.
 
 ## Privacy
 
-Everything stays in a local database on your machine. There is no account, no telemetry, and no
-network call on the hot path. If you ever want it gone:
+Everything stays in a local database on your computer. There is no account, no telemetry, and no
+network call involved in reading your logs or building your Wrapped. If you ever want it gone:
 
 ```sh
-shwind nuke        # delete the database and forget everything
+shw nuke        # delete the database and forget everything
 ```
 
 No hard feelings.
 
-[release-badge]: https://img.shields.io/github/v/release/axo/shwind?style=flat-square&logo=github
-[releases]: https://github.com/axo/shwind/releases
-[goreport-badge]: https://goreportcard.com/badge/github.com/axo/shwind?style=flat-square
-[goreport]: https://goreportcard.com/report/github.com/axo/shwind
-[license-badge]: https://img.shields.io/github/license/axo/shwind?style=flat-square
+[release-badge]: https://img.shields.io/github/v/release/hhcsoftware/shwind?style=flat-square&logo=github
+[releases]: https://github.com/hhcsoftware/shwind/releases
+[license-badge]: https://img.shields.io/github/license/hhcsoftware/shwind?style=flat-square
 [license]: LICENSE
-[issues]: https://github.com/axo/shwind/issues/new
+[issues]: https://github.com/hhcsoftware/shwind/issues/new
 [glob]: https://man7.org/linux/man-pages/man7/glob.7.html
 [demo]: contrib/demo.gif
