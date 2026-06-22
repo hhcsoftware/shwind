@@ -14,7 +14,7 @@
 [![Release][release-badge]][releases]
 [![License][license-badge]][license]
 
-`.shwind` is a **companion for your command line**.
+`.shwind` (**sh**ell re**wind**) is a **companion for your command line**.
 
 It reads the logs your shell and tools already leave behind, your shell history, your
 git logs, and more, then turns them into an on-demand dashboard of your terminal life,
